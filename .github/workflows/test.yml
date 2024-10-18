@@ -1,0 +1,52 @@
+name: Run ETL Workflow
+
+on:
+  push:
+    branches:
+      - main  # Trigger on pushes to the main branch
+  pull_request:  # Trigger on pull requests
+    branches:
+      - main
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest  # Use the latest version of Ubuntu for the environment
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2  # Check out the repository code
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'  # Specify the Python version to use
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip  # Upgrade pip
+          pip install -r requirements.txt  # Install dependencies listed in requirements.txt
+
+      - name: Set up AWS CLI
+        run: |
+          sudo apt-get install -y awscli  # Install AWS CLI
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}  # Configure AWS CLI with access key
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # Configure AWS CLI with secret key
+          aws configure set default.region us-east-1  # Set default region (change as needed)
+
+      - name: Trigger Airflow DAG
+        run: |
+          airflow dags trigger enhanced_etl_pipeline_with_lambda  # Trigger the Airflow DAG
+
+      - name: Monitor Airflow DAG
+        run: |
+          airflow dags wait enhanced_etl_pipeline_with_lambda  # Wait for the DAG to complete
+
+      - name: Check Airflow DAG status
+        run: |
+          STATUS=$(airflow dags state enhanced_etl_pipeline_with_lambda $(date +%Y-%m-%d) | grep -o 'success\|failed')
+          if [[ "$STATUS" != "success" ]]; then
+            echo "DAG failed with status: $STATUS"
+            exit 1  # Exit with an error if the DAG did not succeed
+          else
+            echo "DAG completed successfully."
+          fi
